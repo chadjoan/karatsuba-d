@@ -1,0 +1,25 @@
+name "karatsuba-d"
+description "Example implementation of branchless karatsuba multiplication in the D programming language."
+authors "Chad Joan"
+copyright "Copyright © 2023, Chad Joan"
+license "Boost"
+
+configuration "library" {
+	targetType "library"
+	targetPath "lib/"
+}
+
+/* The "unittest" configuration is a special configuration that is used
+** when "dub test" is invoked on the command line.
+** Suggest using "dub test --build=unittest-cov-ctfe"
+*/
+configuration "unittest" {
+	targetType "executable"
+	targetPath "bin/"
+	targetName "unittests_main"
+	/*buildOptions "unittests" "debugInfo" "coverage"*/
+	mainSourceFile "tester/unittests_main.d"
+	sourcePaths "tester/"
+	/*importPaths "tester/"*/
+	dflags "-checkaction=context"
+}
