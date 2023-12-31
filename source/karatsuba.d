@@ -1,6 +1,6 @@
 module karatsuba_d;
 
-struct KaratsubMultiplyResult(T)
+struct KaratsubaInteger(T)
 {
 	T  lo;
 	T  hi;
@@ -20,7 +20,7 @@ debug
 
 	void kmwriteln(string ln)() {
 		debug {
-			if ( debug_printing )
+			if ( !__ctfe && debug_printing )
 				writeln(ln);
 		}
 	}
@@ -28,7 +28,7 @@ debug
 	void kmwritefln(string fmtstr, A...)(A args)
 	{
 		debug {
-			if ( debug_printing )
+			if ( !__ctfe && debug_printing )
 				writefln(fmtstr, args);
 		}
 	}
@@ -48,13 +48,14 @@ else
 import std.traits;
 
 pure nothrow @nogc @safe
-KaratsubMultiplyResult!T  mult_karatsuba_full(T)(T lhs, T rhs)
+KaratsubaInteger!T  mult_karatsuba_full(T)(T lhs, T rhs)
 	if ( isIntegral!T && isUnsigned!T )
 {
 	kmwritefln!("Debugging `mult_karatsuba_full(lhs:%04X, rhs:%04X)`")(lhs, rhs);
 
-	enum n_bits = T.sizeof * 8;
-	enum lo_mask = (1 << (n_bits/2)) - 1; // Ex: If (T==ushort) then (lo_mask=0x00FF);
+	enum T one = cast(T)1;
+	enum T n_bits = T.sizeof * 8;
+	enum T lo_mask = (one << (n_bits/2)) - 1; // Ex: If (T==ushort) then (lo_mask=0x00FF);
 
 	kmwriteln!("");
 	kmwritefln!("typeof(T) == %s")(T.stringof);
@@ -448,8 +449,8 @@ r1 <<= 1
 	T qq0 = lhs_lsb & rhs_lsb;
 
 	// "Multiply" lsb's by their counterparts, then add.
-	enum T firestop_bit = (1 << (n_bits/2)); // Stop carry propagation just past the first mask bit.
-	enum T _ffffffff = cast(T)(-(cast(T)1));
+	enum T firestop_bit = (one << (n_bits/2)); // Stop carry propagation just past the first mask bit.
+	enum T _ffffffff = cast(T)(-(one));
 	enum T premask = _ffffffff ^ firestop_bit;
 
 	kmwritefln!("firestp == %04X")(firestop_bit);
@@ -1548,13 +1549,13 @@ NOPE it didn't work.
 	q1_over += q1 >>> (n_bits/2);
 	q1 <<= (n_bits/2);
 
-	KaratsubMultiplyResult!T  result;
+	KaratsubaInteger!T  result;
 
 	result.lo = cast(T)(q0 | q1);
 	result.hi = cast(T)(q2 + q1_over);
 +/
 +/
-	KaratsubMultiplyResult!T  result;
+	KaratsubaInteger!T  result;
 	result.lo = q0;
 	result.hi = q2;
 
@@ -1740,6 +1741,19 @@ unittest
 	assert(0x0000_0000_FFFF_FFFF_UL == mult_karatsuba(_0000_0001,_FFFF_FFFF));
 	assert(0x0000_0000_FFFF_FFFF_UL == mult_karatsuba(_FFFF_FFFF,_0000_0001));
 	assert(0xFFFF_FFFE_0000_0001_UL == mult_karatsuba(_FFFF_FFFF,_FFFF_FFFF));
+
+	// Explicit test of struct-returning version, and of 64-bit inputs.
+	ulong  a64 = 0xAceBe11e_CafeBabe_UL;
+	ulong  b64 = 0xF100fCa7_F1edFa57_UL;
+	KaratsubaInteger!ulong  r128 = mult_karatsuba_full(a64,b64);
+	assert(0x8E9C_2945_7ED5_0292 == r128.lo);
+	assert(0xA2CA_B997_9FFE_C71C == r128.hi);
+
+	// Guarantee functioning at compile-time.
+	enum ushort a16 = 0xF00F;
+	enum ushort b16 = 0xB00F;
+	enum uint r32 = mult_karatsuba(a16,b16);
+	static assert(0XA51860E1 == r32);
 
 	writeln("unittest mult_karatsuba: done");
 }
