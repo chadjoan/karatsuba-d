@@ -1,9 +1,30 @@
 module karatsuba_d;
 
-struct KaratsubaInteger(T)
+import std.traits : isIntegral, isUnsigned;
+
+struct KaratsubaInteger(ComponentInteger)
+	if (isIntegral!ComponentInteger && isUnsigned!ComponentInteger)
 {
-	T  lo;
-	T  hi;
+	ComponentInteger  lo;
+	ComponentInteger  hi;
+}
+
+template KaratsubaInteger(ushort n_bits_total)
+{
+	import std.format;
+	static if (n_bits_total <= 16) // 16 bits is representable by two ubytes.
+		alias KaratsubaInteger = KaratsubaInteger!ubyte;
+	else
+	static if (n_bits_total <= 32) // 32 bits is representable by two ushorts.
+		alias KaratsubaInteger = KaratsubaInteger!ushort;
+	else
+	static if (n_bits_total <= 64) // 64 bits is representable by two uints.
+		alias KaratsubaInteger = KaratsubaInteger!uint;
+	else
+	static if (n_bits_total <= 128) // 128 bits is representable by two ulongs.
+		alias KaratsubaInteger = KaratsubaInteger!ulong;
+	else
+		static assert(0, format("%d-bit wide KaratsubaInteger struct is not implemented, sorry.",n_bits_total));
 }
 
 debug
@@ -1748,6 +1769,12 @@ unittest
 	KaratsubaInteger!ulong  r128 = mult_karatsuba_full(a64,b64);
 	assert(0x8E9C_2945_7ED5_0292 == r128.lo);
 	assert(0xA2CA_B997_9FFE_C71C == r128.hi);
+
+	// Test specifying the return type using a bit-width instead of component type.
+	KaratsubaInteger!128  bits128 = mult_karatsuba_full(a64,b64);
+	assert(0x8E9C_2945_7ED5_0292 == bits128.lo);
+	assert(0xA2CA_B997_9FFE_C71C == bits128.hi);
+	static assert(is(KaratsubaInteger!128 == KaratsubaInteger!ulong));
 
 	// Guarantee functioning at compile-time.
 	enum ushort a16 = 0xF00F;
