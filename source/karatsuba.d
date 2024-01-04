@@ -66,10 +66,10 @@ else
 	void kmwritefln(string fmtstr, A...)(A args) {}
 }
 
-import std.traits;
+
 
 pure nothrow @nogc @safe
-KaratsubaInteger!T  mult_karatsuba_full(T)(T lhs, T rhs)
+KaratsubaInteger!T  mult_karatsuba_full_pos(T)(T lhs, T rhs)
 	if ( isIntegral!T && isUnsigned!T )
 {
 	kmwritefln!("Debugging `mult_karatsuba_full(lhs:%04X, rhs:%04X)`")(lhs, rhs);
@@ -169,11 +169,11 @@ KaratsubaInteger!T  mult_karatsuba_full(T)(T lhs, T rhs)
 	kmwritefln!("rhsmask == %04X")(rhs_mask);
 	kmwritefln!("lhs_qq1 == %04X")(lhs_qq1);
 	kmwritefln!("rhs_qq1 == %04X")(rhs_qq1);
-	kmwritefln!("q0.0    == %04X")(q0);
+	kmwritefln!("q0      == %04X")(q0);
 	kmwritefln!("qq0     == %04X")(qq0);
 	kmwritefln!("qq1     == %04X")(qq1);
 	kmwritefln!("qq2     == %04X")(qq2);
-	kmwritefln!("q2.0    == %04X")(q2);
+	kmwritefln!("q2      == %04X")(q2);
 	kmwriteln!("");
 
 	// Note that `qq1` does not use all (n_bits) bits.
@@ -314,6 +314,242 @@ KaratsubaInteger!T  mult_karatsuba_full(T)(T lhs, T rhs)
 
 	return result;
 }
+
+
+
+
+pure nothrow @nogc @safe
+KaratsubaInteger!T  mult_karatsuba_full_neg(T)(T lhs, T rhs)
+	if ( isIntegral!T && isUnsigned!T )
+{
+	// In the below implementation, you will see this pattern:
+	//   q = (p + p_mask) ^ p_mask;
+	// or
+	//   q += p_mask;
+	//   q ^= p_mask;
+	//
+	// This is a way to conditionally negate a twos-complement integer.
+	// More specifically, it does the following operation:
+	//
+	//   if ( p < 0 )
+	//       q = -p;
+	//
+	// Similarly, we can evaluate absolute values this way:
+	//
+	//   p = abs(p);
+	//
+	// ... is the same as:
+	//
+	//   p_mask = (cast(Signed!(typeof(p)))p) >> (n_bits-1);
+	//   p = (p + p_mask) ^ p_mask;
+	//
+	// What these are doing is emulating twos-complement arithmatic:
+	// To negate a twos-complement number, invert (flip) its bits, then add 1.
+	// Alternatively: subtract 1, then invert its bits.
+	//
+	// We're using the alternative strategy because
+	// the former version is patented.
+	// Source and details: https://graphics.stanford.edu/~seander/bithacks.html#IntegerAbs
+	// Also: https://stackoverflow.com/a/9962527/1261963  (This person probably knew about the bithacks sites)
+	//
+	// You might still notice that we are adding the mask, rather than subtracting 1.
+	//
+	// That's because it would take at least one extra instruction (per negation)
+	// to compute the conditional `1` value. So, instead, we exploit this property:
+	// (x - 1) == (x + -1) == (x + 0xFF)
+	//
+	// So we can always add or subtract 1 from a number by subtracting or adding
+	// its (integer type's) mask value.
+	//
+	// And that is how the code below accomplishes branchless negation and absolute-ing.
+
+	kmwritefln!("Debugging `mult_karatsuba_full(lhs:%04X, rhs:%04X)`")(lhs, rhs);
+
+	import std.traits : Signed;
+	alias ST = Signed!T;
+
+	//enum T zero = cast(T)0;
+	enum T one = cast(T)1;
+	enum T n_bits = T.sizeof * 8;
+	enum T lo_mask = (one << (n_bits/2)) - 1; // Ex: If (T==ushort) then (lo_mask=0x00FF);
+
+	kmwriteln!("");
+	kmwritefln!("typeof(T) == %s")(T.stringof);
+	kmwritefln!("n_bits  == %d")  (n_bits);
+	kmwritefln!("lo_mask == %04X")(lo_mask);
+
+	T lhs_lo = cast(T)(lhs & lo_mask);
+	T lhs_hi = cast(T)(lhs >>> (n_bits/2));
+	T rhs_lo = cast(T)(rhs & lo_mask);
+	T rhs_hi = cast(T)(rhs >>> (n_bits/2));
+
+	ST lhs_sdiff = cast(ST)(lhs_lo - lhs_hi);
+	ST rhs_sdiff = cast(ST)(rhs_hi - rhs_lo);
+	T lhs_mask = cast(T)(lhs_sdiff >> (n_bits-1)); // extend sign bit to fill
+	T rhs_mask = cast(T)(rhs_sdiff >> (n_bits-1)); // extend sign bit to fill
+	T q1_mask = lhs_mask ^ rhs_mask; // output_sign = lhs_sign * rhs_sign;
+	T lhs_diff = cast(T)((lhs_sdiff + lhs_mask) ^ lhs_mask); // = abs(lhs_sdiff);
+	T rhs_diff = cast(T)((rhs_sdiff + rhs_mask) ^ rhs_mask); // = abs(rhs_sdiff);
+
+	kmwriteln!("");
+	kmwritefln!("lhs_lo  == %04X")(lhs_lo);
+	kmwritefln!("lhs_hi  == %04X")(lhs_hi);
+	kmwritefln!("rhs_lo  == %04X")(rhs_lo);
+	kmwritefln!("rhs_hi  == %04X")(rhs_hi);
+	kmwritefln!("lhs_sdf == %04X")(cast(T)lhs_sdiff);
+	kmwritefln!("rhs_sdf == %04X")(cast(T)rhs_sdiff);
+	kmwritefln!("lhs_msk == %04X")(lhs_mask);
+	kmwritefln!("rhs_msk == %04X")(rhs_mask);
+	kmwritefln!("lhs_dif == %04X")(lhs_diff);
+	kmwritefln!("rhs_dif == %04X")(rhs_diff);
+	kmwritefln!("q1_mask == %04X")(q1_mask);
+	kmwriteln!("");
+
+	T q0 = cast(T)(lhs_lo   * rhs_lo );
+	T q1 = cast(T)(lhs_diff * rhs_diff);
+	T q2 = cast(T)(lhs_hi   * rhs_hi );
+
+	kmwritefln!("q0      == %04X")(q0);
+	kmwritefln!("q1      == %04X")(q1);
+	kmwritefln!("q2      == %04X")(q2);
+	kmwriteln!("");
+
+	// Here, we negate `q1`, but only if `lhs_sdiff * rhs_sdiff` would have
+	// been negative.
+	q1 += q1_mask;
+	q1 ^= q1_mask;
+
+	// The above isn't quite enough, because a negative `q1` would span "n_bits+1" bits.
+	// So we have `q1_sign`, which is that extra bit.
+	// `q1_sign` is that thing we must subtract from `q2` later, to emulate
+	// the borrowing that would happen when a negative number is added to
+	// its lower half.
+	//
+	// In most cases, we could compute it this way:
+	// T q1_sign = (q1_mask & 1) << (n_bits/2);
+	//
+	// This usually works, because `q1_mask` has all bits set when the multiplication
+	// goes negative, and all bits clear if it goes positive. Taking the lowest
+	// bit of that will give us a 1 or 0 based on that condition.
+	//
+	// However, it doesn't work when q1==0. In that case, -0 == 0, and we shouldn't
+	// subtract anything from `q2` later on, because there is no borrowing to
+	// emulate when subtracting 0.
+	//
+	// To that end, we must AND `q1_mask` with a bit that will be 1 if `q1` is
+	// nonzero, or 0 if `q1` is zero. And it has to be 1 or 0 specifically.
+	// Any larger numbers may fail to include the lowest bit of `q1_mask`.
+	// Because `q1` could be _anything_, we need to normalize it to 1 or 0.
+	// We do that with the `!!q1` trick, which is equivalent to `0 < q1 ? 1 : 0`,
+	// or to
+	// ```
+	// if ( 0 == q1 )
+	//     q1_sign = 0;
+	// else // 0 < q1
+	//     q1_sign = q1_mask & 1;
+	// ```
+	//
+	T q1_sign = q1_mask & !!q1;
+	// Alternative version, if you're translating this code to some place
+	// where `!!q1` isn't available, and you still need it to be branchless:
+	//T q1_sign = q1_mask & ((q1 >>> (n_bits-1)) | (cast(T)(-q1) >>> (n_bits-1)));
+	q1_sign <<= n_bits/2;
+	kmwriteln!("q1 += q1_mask");
+	kmwriteln!("q1 ^= q1_mask");
+	kmwritefln!("q1      == %04X")(q1);
+	kmwritefln!("q1_sign == %04X")(q1_sign);
+	kmwriteln!("");
+
+	// Now we are far enough along to accumulate all of the components
+	// into our resulting integers:
+	//
+	// result = q2*m^2 + q1*m + q0
+	//
+	// Now we need to repack {q0,q1,q2,...} into {result.lo,result.hi}:
+	//
+	//        q0 =             [bbbbbbaaaaaa]
+	// q0_middle =       [ccccccbbbbbb]
+	//        q1 =       [ccccccbbbbbb]
+	// q2_middle =       [ccccccbbbbbb]
+	//  -q1_sign =      [d]
+	//        q2 = [ddddddcccccc]
+	// result.lo =             [bbbbbbaaaaaa]
+	// result.hi = [ddddddcccccc]
+	//
+	T q0_middle = q0;
+	alias q1_middle = q1;
+	T q2_middle = q2;
+
+	// First pass of accumulating digits into the high bits.
+
+	q2 += q0_middle >>> (n_bits/2);
+	kmwriteln!("q2 += q0_middle >>> (n_bits/2)");
+	kmwritefln!("q2 == %04X")(q2);
+
+	q2 += q1_middle >>> (n_bits/2);
+	kmwriteln!("q2 += q1_middle >>> (n_bits/2)");
+	kmwritefln!("q2 == %04X")(q2);
+
+	q2 += q2_middle >>> (n_bits/2);
+	kmwriteln!("q2 += q2_middle >>> (n_bits/2)");
+	kmwritefln!("q2 == %04X")(q2);
+
+	q2 -= q1_sign;
+	kmwriteln!("q2 -= q1_sign");
+	kmwritefln!("q2 == %04X")(q2);
+
+	// Accumulate half-width things in the "middle" lane.
+	q0_middle &= lo_mask;
+	q1_middle &= lo_mask;
+	q2_middle &= lo_mask;
+	kmwriteln!("q0_middle &= lo_mask");
+	kmwriteln!("q1_middle &= lo_mask");
+	kmwriteln!("q2_middle &= lo_mask");
+
+	q1_middle += q0_middle;
+	q1_middle += q2_middle;
+	q1_middle += q0 >>> (n_bits/2);
+	kmwriteln!("q1_middle += q0_middle");
+	kmwriteln!("q1_middle += q2_middle");
+	kmwriteln!("q1_middle += q0 >>> (n_bits/2)");
+	kmwritefln!("q1_middle == %04X")(q1_middle);
+
+	// Update the top half of `q0`.
+	// (We can mask it initially because the original contents have already
+	// been accumulated into the bottom half of `q1_middle`. So this operation
+	// won't lose any information.)
+	q0 &= lo_mask;
+	q0 |= q1_middle << (n_bits/2);
+	kmwriteln!("q0 &= lo_mask");
+	kmwriteln!("q0 |= q1_middle << (n_bits/2)");
+	kmwritefln!("q0 == %04X")(q0);
+
+	// Carry / overflow.
+	q2 += q1_middle >>> (n_bits/2);
+	kmwriteln!("q2 += q1_middle >>> (n_bits/2)");
+	kmwritefln!("q2 == %04X")(q2);
+
+	// At this point, everything has been accumulated into `q0` and `q2`,
+	// so those variables hold our results.
+	KaratsubaInteger!T  result;
+	result.lo = q0;
+	result.hi = q2;
+
+	kmwritefln!("result.lo == %04X")(result.lo);
+	kmwritefln!("result.hi == %04X")(result.hi);
+	kmwritefln!("Finished `mult_karatsuba_full(lhs:%04X, rhs:%04X)`")(lhs, rhs);
+
+	return result;
+}
+
+// As of this writing, it makes sense to either define this as
+// `mult_karatsuba_full_neg` or `mult_karatsuba_full_pos`.
+// They _should_ give the exact same results. The only difference is
+// in the calculations used to reach those results.
+// This alias allows us to easily switch between the implementations.
+// Future directions: The unittests should probably test both
+// at the same time, not just whichever is selected currently.
+alias mult_karatsuba_full = mult_karatsuba_full_neg;
 
 ulong mult_karatsuba(uint lhs, uint rhs)
 {
