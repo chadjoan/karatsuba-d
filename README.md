@@ -64,9 +64,16 @@ int main(string[] args)
 	return 0;
 }
 ```
+
+## Why
+
+It was very hard to find an example of how to exhaustively handle the overflow conditions in a Karatsuba multiplier. There were plenty of articles describing how Karatsuba multiplication works, often with pseudocode or implementations that simply don't handle the overflow. And yet, the overflow handling is the most challenging part of writing these correctly, because if we don't get it _just perfectly right_, then the failure mode(s) can be subtle, causing an appearance of working for some examples but then failing when subjected to more realistic inputs.
+
+So I made one, to see exactly what the solution looks like, by finding it myself. Also it's nice to have a branchless version that is verified for correctness, since the places where this algorithm would be useful tend to also be places where branchless programming is very important, if not necessary.
+
 ## Details
 
-This code is meant to be usable as a guide when implementing a better-optimized version, ex: in SIMD assembly or GPU shaders. It might also be useful as a quick way to implement compile-time wide integers for use in CTFE functions. As such, this is not an optimized implementation. It shows how to do Karastuba multiplication in a branchless way, and also handle all of the corner-cases (ex: overflow|carry|borrow of intermediate results).
+This code is meant to be usable as a guide when implementing a better-optimized version, ex: in SIMD assembly or GPU shaders. It might also be useful as a quick way to implement compile-time wide integers for use in CTFE functions. As such, this is not an optimized implementation.
 
 It is intended to be (indirectly) beneficial to bespoke wide-integer (or fixed-point integer) implementations. It is not intended to help with Big Integer implementation. There are algorithms with better time-complexity for the really large integers, but for integers that are smaller (but still wider than 64 bits), the simplicity of this method might be quite helpful. Eventually, this should demonstrate multiplication for things like 96-bit, 128-bit, or 256-bit integer results. Of course, there's nothing wrong with modifying this to help with big integers, it's just that there are better options out there for that.
 
